@@ -76,41 +76,16 @@ def get_tools():
     ]
 
 def get_available_functions():
-    return {"query_azure_sql":query_azure_sql}
+    return {"query_azure_sql":query_azure_sql, "get_table_schema":get_table_schema}
 
 def init_messages():
     return [
     {"role":"system", "content":"""You are a helpful AI data analyst assistant, 
      You can execute SQL queries to retrieve information from a sql table, the table name is sales_data
-     Here is the table schema
-              COLUMN_NAME DATA_TYPE
-0              index    bigint
-1        ORDERNUMBER    bigint
-2    QUANTITYORDERED    bigint
-3          PRICEEACH     float
-4    ORDERLINENUMBER    bigint
-5              SALES     float
-6          ORDERDATE   varchar
-7             STATUS   varchar
-8             QTR_ID    bigint
-9           MONTH_ID    bigint
-10           YEAR_ID    bigint
-11       PRODUCTLINE   varchar
-12              MSRP    bigint
-13       PRODUCTCODE   varchar
-14      CUSTOMERNAME   varchar
-15             PHONE   varchar
-16      ADDRESSLINE1   varchar
-17      ADDRESSLINE2   varchar
-18              CITY   varchar
-19             STATE   varchar
-20        POSTALCODE   varchar
-21           COUNTRY   varchar
-22         TERRITORY   varchar
-23   CONTACTLASTNAME   varchar
-24  CONTACTFIRSTNAME   varchar
-25          DEALSIZE   varchar
-     
+     The database is SQL server, use the right syntax to generate queries
+     This query is for Azure SQL, so use the right syntax
+     When asked a question relative to sales, first look up the schema of the table and then create a sql query to retrieve the information
+    
      """}
 ]
 
@@ -132,19 +107,70 @@ if "messages" not in st.session_state:
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    if message["role"] in ["user", "assistant"] and 'content' in message:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-messages = init_messages()+[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ]
+def get_message_history():
+    return init_messages()+st.session_state.messages
+            
+
+
+def process_stream(stream):
+    tool_calls = []
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta if chunk.choices and chunk.choices[0].delta is not None else None
+        if delta and delta.content:
+            response = st.write_stream(stream)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            return False
+        elif delta and delta.tool_calls:
+            tc_chunk_list = delta.tool_calls
+            for tc_chunk in tc_chunk_list:
+                if len(tool_calls) <= tc_chunk.index:
+                    tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+
+                tc = tool_calls[tc_chunk.index]
+                if tc_chunk.id:
+                    tc["id"] += tc_chunk.id
+                if tc_chunk.function.name:
+                    tc["function"]["name"] += tc_chunk.function.name
+                if tc_chunk.function.arguments:
+                    tc["function"]["arguments"] += tc_chunk.function.arguments
+
+    if tool_calls:
+        st.session_state.messages.append({"role": "assistant", "tool_calls": tool_calls})
+        available_functions = get_available_functions()
+
+        for tool_call in tool_calls:
+            # Note: the JSON response may not always be valid; be sure to handle errors
+            function_name = tool_call['function']['name']
+
+            # Step 3: call the function with arguments if any
+            function_to_call = available_functions[function_name]
+            function_args = json.loads(tool_call['function']['arguments'])
+            with st.status(f"Running function: {function_name}...", expanded=True) as status:
+                st.code(function_args.get("query"), language="sql")
+                function_response = function_to_call(**function_args)
+                st.write(f"Function output {function_response}")
+                status.update(label=f"Function {function_name} completed!", state="complete", expanded=False)
+
+
+            st.session_state.messages.append(
+                {
+                    "tool_call_id": tool_call['id'],
+                    "role": "tool",
+                    "name": function_name,
+                    "content": function_response,
+                }
+            )
+            return True
 
 # Accept user input
 if prompt := st.chat_input("What is up?"):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
-    messages.append({"role": "user", "content": prompt})
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -152,69 +178,14 @@ if prompt := st.chat_input("What is up?"):
 
 # Display assistant response in chat message container
     with st.chat_message("assistant"):
-        stream = client.chat.completions.create(
+        has_more = True
+        while has_more:
+            print(st.session_state.messages)
+            stream = client.chat.completions.create(
             model=st.session_state["openai_model"],
-            messages=messages,
+            messages=get_message_history(),
             stream=True,
             tools = get_tools(),
             tool_choice="auto"
         )
-
-        tool_calls=[]
-
-        for chunk in stream:
-            delta = chunk.choices[0].delta if chunk.choices and chunk.choices[0].delta is not None else None
-            if delta and delta.content:
-                response = st.write_stream(stream)
-                break
-            elif delta and delta.tool_calls:
-                tc_chunk_list = delta.tool_calls
-                for tc_chunk in tc_chunk_list:
-                    if len(tool_calls) <= tc_chunk.index:
-                        tool_calls.append({"id":"", "type":"function", "function":{"name":"", "arguments":""}})
-                    
-                    tc = tool_calls[tc_chunk.index]
-                    if tc_chunk.id:
-                        tc["id"] += tc_chunk.id
-                    if tc_chunk.function.name:
-                        tc["function"]["name"] += tc_chunk.function.name
-                    if tc_chunk.function.arguments:
-                        tc["function"]["arguments"] += tc_chunk.function.arguments
-    
-        if tool_calls:
-            messages.append({"role":"assistant", "tool_calls":tool_calls})
-            available_functions = get_available_functions()
-        
-            for tool_call in tool_calls:
-                # Note: the JSON response may not always be valid; be sure to handle errors
-                    function_name = tool_call['function']['name']
-                
-                    # Step 3: call the function with arguments if any
-                    function_to_call = available_functions[function_name]
-                    function_args = json.loads(tool_call['function']['arguments'])
-                    with st.status(f"Running function: {function_name}...", expanded=True) as status:
-                        st.code(function_args.get("query"), language="sql")
-                        function_response = function_to_call(**function_args)
-                        st.write(f"Function output {function_response}")
-                        status.update(label=f"Function {function_name} completed!", state="complete", expanded=False)
-
-
-                    # Step 4: send the info for each function call and function response to the model
-                    messages.append(
-                        {
-                            "tool_call_id": tool_call['id'],
-                            "role": "tool",
-                            "name": function_name,
-                            "content": function_response,
-                        }
-                    )
-                
-            stream2 = client.chat.completions.create(
-                                            model="gpt-4o-global",
-                                            messages=messages,
-                                            temperature=0,  # Adjust the variance by changing the temperature value (default is 0.8)
-                                            stream=True,
-                    )
-            
-            stream_response2 = st.write_stream(stream2)
-            st.session_state.messages.append({"role": "assistant", "content": stream_response2})
+            has_more = process_stream(stream)
