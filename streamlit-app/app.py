@@ -184,7 +184,6 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("assistant"):
         has_more = True
         while has_more:
-            print(st.session_state.messages)
             stream = client.chat.completions.create(
             model=st.session_state["openai_model"],
             messages=get_message_history(),
