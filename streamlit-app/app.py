@@ -151,7 +151,9 @@ def process_stream(stream):
             function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call['function']['arguments'])
             with st.status(f"Running function: {function_name}...", expanded=True) as status:
-                st.code(function_args.get("query"), language="sql")
+                st.write(f"Function arguments: {function_args}")
+                if function_args.get("query"):
+                    st.code(function_args.get("query"), language="sql")
                 function_response = function_to_call(**function_args)
                 st.write(f"Function output {function_response}")
                 status.update(label=f"Function {function_name} completed!", state="complete", expanded=False)
