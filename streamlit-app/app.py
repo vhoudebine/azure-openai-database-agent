@@ -23,6 +23,12 @@ params = urllib.parse.quote_plus(connection_string)
 conn_str = 'mssql+pyodbc:///?odbc_connect={}'.format(params)
 engine_azure = create_engine(conn_str,echo=False)
 
+def list_database_tables() -> str:
+    """List tables in the Azure SQL database"""
+    query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+    print(f"Executing query on Azure SQL: {query}")
+    df = pd.read_sql(query, engine_azure)
+    return json.dumps(df.to_dict(orient='records'))
 
 def query_azure_sql(query: str) -> str:
     """Run a SQL query on Azure SQL and return results as a pandas DataFrame"""
@@ -36,6 +42,13 @@ def get_table_schema(table_name: str) -> str:
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
+
+def get_table_rows(table_name: str) -> str:
+    """Get the first 5 rows of a table in Azure SQL"""
+    query = f"SELECT TOP(5) * FROM {table_name}"
+    print(f"Executing query on Azure SQL: {query}")
+    df = pd.read_sql(query, engine_azure)
+    return df.to_markdown()
 
 def get_tools():
     return [
@@ -73,19 +86,45 @@ def get_tools():
                 },
             }
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_table_rows",
+                "description": "Preview the first 5 rows of a table in Azure SQL",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": {
+                            "type": "string",
+                            "description": "The name of the table to get the preview for",
+                        },
+                    },
+                    "required": ["table_name"],
+                },
+            }
+        }
+
     ]
 
 def get_available_functions():
-    return {"query_azure_sql":query_azure_sql, "get_table_schema":get_table_schema}
+    return {
+        "query_azure_sql":query_azure_sql, 
+        "get_table_schema":get_table_schema,
+        "get_table_rows":get_table_rows
+        }
 
 def init_messages():
     return [
     {"role":"system", "content":"""You are a helpful AI data analyst assistant, 
      You can execute SQL queries to retrieve information from a sql table, the table name is sales_data
      The database is SQL server, use the right syntax to generate queries
-     This query is for Azure SQL, so use the right syntax
-     When asked a question relative to sales, first look up the schema of the table and then create a sql query to retrieve the information
-    
+     When asked a question relative to sales: 
+     - first look up the schema of the table and preview the first 5 rows
+     - then create a sql query to retrieve the information based on your understanding of the table
+
+     DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
+    question: "Show me the first 5 rows of the sales_data table"
+    query: SELECT TOP(5) * FROM sales_data  
      """}
 ]
 
@@ -124,6 +163,7 @@ def process_stream(stream):
         if delta and delta.content:
             response = st.write_stream(stream)
             st.session_state.messages.append({"role": "assistant", "content": response})
+            print(chunk.choices[0].delta)
             return False
         elif delta and delta.tool_calls:
             tc_chunk_list = delta.tool_calls
@@ -153,11 +193,11 @@ def process_stream(stream):
             with st.status(f"Running function: {function_name}...", expanded=True) as status:
                 
                 if function_args.get("query"):
-                    st.code(function_args.get("query"), language="sql")
+                    status.code(function_args.get("query"), language="sql")
                 else:
-                    st.write(f"Function arguments: {function_args}")
+                    status.write(f"Function arguments: {function_args}")
                 function_response = function_to_call(**function_args)
-                st.write(f"Function output {function_response}")
+                status.write(f"Function outputs: {function_response}")
                 status.update(label=f"Function {function_name} completed!", state="complete", expanded=False)
 
 
@@ -169,7 +209,8 @@ def process_stream(stream):
                     "content": function_response,
                 }
             )
-            return True
+
+        return True
 
 # Accept user input
 if prompt := st.chat_input("What is up?"):
