@@ -3,3 +3,5 @@ sqlalchemy
 streamlit
 pandas
 openai
+python-dotenv
+tabulate
