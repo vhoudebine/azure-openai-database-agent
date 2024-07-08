@@ -128,6 +128,9 @@ def init_messages():
      """}
 ]
 
+def reset_conversation():
+  st.session_state.messages = []
+
 client = AzureOpenAI(
     azure_endpoint=endpoint,
     api_key=api_key,
@@ -135,6 +138,11 @@ client = AzureOpenAI(
 )
 
 st.title("Chat with Azure SQL")
+st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Azure SQL", icon="📃")
+
+
+st.button('Clear Chat History 🔄', on_click=reset_conversation)
+
 
 # Set a default model
 if "openai_model" not in st.session_state:
@@ -213,7 +221,7 @@ def process_stream(stream):
         return True
 
 # Accept user input
-if prompt := st.chat_input("What is up?"):
+if prompt := st.chat_input("Ask me anything..."):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
     # Display user message in chat message container
