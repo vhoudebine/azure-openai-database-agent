@@ -1,7 +1,9 @@
 # Azure OpenAI Database Agent for Azure SQL
 
 This repo shows how to build a Database agent using Azure OpenAI, Azure SQL and Azure App service
-For simplicity purposes, this application implements the agent using the OpenAI Python SDK's chat completion API and function calling. This provides extended customization possibilities as well as more control over the orchestration, prompts etc.
+For simplicity purposes, the application implements the agent using the OpenAI Python SDK's chat completion API and function calling. This provides extended customization possibilities as well as more control over the orchestration, prompts etc.
+
+Read more on [Function Calling](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/function-calling) in Azure OpenAI's documentation
 
 **Streamlit chat frontend**
 
