@@ -17,6 +17,9 @@ Open the [sample.env](./sample.env) file and replace the placeholders with your 
 
 ## Getting started
 ### Option 1: Docker
+
+The [Dockerfile](./Dockerfile) packages the application and its dependencies for easier deployment.
+
 Build the docker image
 ```bash
 docker build -t azure-db-agent:v1 .
@@ -31,9 +34,6 @@ docker run --rm -p 8880:8501 azure-db-agent:v1
 Now open a browser on `localhost:8880` to use the application
 
 ### Option 2: Manual install
-
-The [Dockerfile](./Dockerfile) packages the application and its dependencies for easier deployment.
-
 #### 1. Install dependencies
 
 The scripts and app in this repo leverage the SQL Server Driver to connect to Azure SQL using ODBC, this requires you to have the driver installed in the local environment.
