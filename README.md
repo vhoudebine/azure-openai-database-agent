@@ -36,7 +36,7 @@ docker run --rm -p 8880:8501 azure-db-agent:v1
 
 Now open a browser on `localhost:8880` to use the application
 
-### Option 2: Manual install
+### Option 2: Manual install (OS: Ubuntu 22.04)
 #### 1. Install dependencies
 
 The scripts and app in this repo leverage the SQL Server Driver to connect to Azure SQL using ODBC, this requires you to have the driver installed in the local environment.
