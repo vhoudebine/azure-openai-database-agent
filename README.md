@@ -16,7 +16,7 @@ This repo assumes you already have the following resources deployed:
 
 ### Populate .env file with your credentials
 
-Open the [sample.env](./sample.env) file and replace the placeholders with your Azure OpenAI and Azure SQL credentials, save the file.
+Open the [sample.env](./sample.env) file and replace the placeholders with your Azure OpenAI and Azure SQL credentials, save the file an name it `.env`.
 
 ## Getting started
 ### Option 1: Docker
