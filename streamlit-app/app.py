@@ -12,6 +12,7 @@ load_dotenv()
 
 endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
 api_key = os.getenv('AZURE_OPENAI_API_KEY')
+deployment = os.getenv('AZURE_OPENAI_MODEL_DEPLOYMENT')
 server = os.getenv('AZURE_SQL_SERVER') 
 database = os.getenv('AZURE_SQL_DB_NAME')
 username = os.getenv('AZURE_SQL_USER') 
@@ -146,7 +147,7 @@ st.button('Clear Chat History 🔄', on_click=reset_conversation)
 
 # Set a default model
 if "openai_model" not in st.session_state:
-    st.session_state["openai_model"] = "gpt-4o-global"
+    st.session_state["openai_model"] = deployment
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -171,7 +172,6 @@ def process_stream(stream):
         if delta and delta.content:
             response = st.write_stream(stream)
             st.session_state.messages.append({"role": "assistant", "content": response})
-            print(chunk.choices[0].delta)
             return False
         elif delta and delta.tool_calls:
             tc_chunk_list = delta.tool_calls
