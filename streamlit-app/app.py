@@ -114,16 +114,23 @@ def get_available_functions():
         "get_table_rows":get_table_rows
         }
 
-def init_messages():
+@st.cache_data
+def init_system_prompt():
     return [
-    {"role":"system", "content":"""You are a helpful AI data analyst assistant, 
-     You can execute SQL queries to retrieve information from a sql table, the table name is sales_data
+    {"role":"system", "content":f"""You are a helpful AI data analyst assistant, 
+     You can execute SQL queries to retrieve information from a sql database,
      The database is SQL server, use the right syntax to generate queries
-     When asked a question relative to sales: 
-     - first look up the schema of the table and preview the first 5 rows
-     - then create a sql query to retrieve the information based on your understanding of the table
+
+     ### These are the available tables in the database:
+    {list_database_tables()}
+
+     When asked a question that could be answer with a SQL query: 
+     - first look up the schema of the table
+     - preview the first 5 rows
+     - Only once this is done, create a sql query to retrieve the information based on your understanding of the table
 
      DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
+    
     question: "Show me the first 5 rows of the sales_data table"
     query: SELECT TOP(5) * FROM sales_data  
      """}
@@ -159,20 +166,37 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+system_prompt = init_system_prompt()
+
 def get_message_history():
-    return init_messages()+st.session_state.messages
+    return system_prompt+st.session_state.messages
             
 
 
 def process_stream(stream):
-    tool_calls = []
+    # Empty container to display the assistant's reply
+    assistant_reply_box = st.empty()
+    
+    # A blank string to store the assistant's reply
+    assistant_reply = ""
 
-    for chunk in stream:
-        delta = chunk.choices[0].delta if chunk.choices and chunk.choices[0].delta is not None else None
+    # Iterate through the stream
+    tool_calls = []
+    for event in stream:
+        print(event)
+        # There are various types of streaming events
+        # See here: https://platform.openai.com/docs/api-reference/assistants-streaming/events
+
+        # Here, we only consider if there's a delta text
+        delta = event.choices[0].delta if event.choices and event.choices[0].delta is not None else None
         if delta and delta.content:
-            response = st.write_stream(stream)
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            return False
+            # empty the container
+            assistant_reply_box.empty()
+            # add the new text
+            assistant_reply += delta.content
+                # display the new text
+            assistant_reply_box.markdown(assistant_reply)
+
         elif delta and delta.tool_calls:
             tc_chunk_list = delta.tool_calls
             for tc_chunk in tc_chunk_list:
@@ -185,8 +209,7 @@ def process_stream(stream):
                 if tc_chunk.function.name:
                     tc["function"]["name"] += tc_chunk.function.name
                 if tc_chunk.function.arguments:
-                    tc["function"]["arguments"] += tc_chunk.function.arguments
-
+                    tc["function"]["arguments"] += tc_chunk.function.arguments    
     if tool_calls:
         st.session_state.messages.append({"role": "assistant", "tool_calls": tool_calls})
         available_functions = get_available_functions()
@@ -217,8 +240,10 @@ def process_stream(stream):
                     "content": function_response,
                 }
             )
-
         return True
+    else:
+        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+        return False
 
 # Accept user input
 if prompt := st.chat_input("Ask me anything..."):

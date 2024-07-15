@@ -2,6 +2,6 @@ pyodbc
 sqlalchemy
 streamlit
 pandas
-openai
+openai==1.26.0
 python-dotenv
 tabulate
