@@ -183,10 +183,6 @@ def process_stream(stream):
     # Iterate through the stream
     tool_calls = []
     for event in stream:
-        print(event)
-        # There are various types of streaming events
-        # See here: https://platform.openai.com/docs/api-reference/assistants-streaming/events
-
         # Here, we only consider if there's a delta text
         delta = event.choices[0].delta if event.choices and event.choices[0].delta is not None else None
         if delta and delta.content:
