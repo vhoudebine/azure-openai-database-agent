@@ -45,11 +45,18 @@ def get_table_schema(table_name: str) -> str:
     return json.dumps(df.to_dict(orient='records'))
 
 def get_table_rows(table_name: str) -> str:
-    """Get the first 5 rows of a table in Azure SQL"""
-    query = f"SELECT TOP(5) * FROM {table_name}"
+    """Get the first 3 rows of a table in Azure SQL"""
+    query = f"SELECT TOP(3) * FROM {table_name}"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return df.to_markdown()
+
+def get_column_values(table_name: str, column_name: str) -> str:
+    """Get the unique values of a column in a table in Azure SQL"""
+    query = f"SELECT DISTINCT {column_name} FROM {table_name}"
+    print(f"Executing query on Azure SQL: {query}")
+    df = pd.read_sql(query, engine_azure)
+    return json.dumps(df.to_dict(orient='records'))
 
 def get_tools():
     return [
@@ -103,6 +110,27 @@ def get_tools():
                     "required": ["table_name"],
                 },
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_column_values",
+                "description": "Get the unique values of a column in a table in Azure SQL",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": {
+                            "type": "string",
+                            "description": "The name of the table to get the column values for",
+                        },
+                        "column_name": {
+                            "type": "string",
+                            "description": "The name of the column to get the values for",
+                        },
+                    },
+                    "required": ["table_name", "column_name"],
+                },
+            }
         }
 
     ]
@@ -111,7 +139,8 @@ def get_available_functions():
     return {
         "query_azure_sql":query_azure_sql, 
         "get_table_schema":get_table_schema,
-        "get_table_rows":get_table_rows
+        "get_table_rows":get_table_rows,
+        "get_column_values":get_column_values
         }
 
 @st.cache_data
@@ -121,13 +150,18 @@ def init_system_prompt():
      You can execute SQL queries to retrieve information from a sql database,
      The database is SQL server, use the right syntax to generate queries
 
+
      ### These are the available tables in the database:
     {list_database_tables()}
 
-     When asked a question that could be answer with a SQL query: 
-     - first look up the schema of the table
-     - preview the first 5 rows
+     When asked a question that could be answered with a SQL query: 
+     - ALWAYS look up the schema of the table
+     - ALWAYS preview the first 5 rows
+     - IF YOU ARE USING A WHERE CLAUSE, make sure to look up the unique values of the column, don't assume the filter values
      - Only once this is done, create a sql query to retrieve the information based on your understanding of the table
+ 
+
+    Don't explain your reasoning, just execute the functions if needed and reply with a factual answer
 
      DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
     
@@ -192,6 +226,7 @@ def process_stream(stream):
             assistant_reply += delta.content
                 # display the new text
             assistant_reply_box.markdown(assistant_reply)
+            
 
         elif delta and delta.tool_calls:
             tc_chunk_list = delta.tool_calls
@@ -206,6 +241,9 @@ def process_stream(stream):
                     tc["function"]["name"] += tc_chunk.function.name
                 if tc_chunk.function.arguments:
                     tc["function"]["arguments"] += tc_chunk.function.arguments    
+    
+    if assistant_reply!="":
+        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     if tool_calls:
         st.session_state.messages.append({"role": "assistant", "tool_calls": tool_calls})
         available_functions = get_available_functions()
@@ -238,7 +276,7 @@ def process_stream(stream):
             )
         return True
     else:
-        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+        
         return False
 
 # Accept user input
