@@ -5,3 +5,4 @@ pandas
 openai==1.26.0
 python-dotenv
 tabulate
+streamlit-audiorecorder

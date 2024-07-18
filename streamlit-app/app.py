@@ -5,14 +5,20 @@ import pandas as pd
 import streamlit as st
 import pyodbc
 from sqlalchemy import create_engine
+from audiorecorder import audiorecorder
 import urllib
 import json
+import io
+import numpy as np
+import time
+
 
 load_dotenv()
 
 endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
 api_key = os.getenv('AZURE_OPENAI_API_KEY')
-deployment = os.getenv('AZURE_OPENAI_MODEL_DEPLOYMENT')
+deployment = os.getenv('AZURE_OPENAI_GPT_MODEL_DEPLOYMENT')
+speech_deployment = os.getenv('AZURE_OPENAI_WHISPER_MODEL')
 server = os.getenv('AZURE_SQL_SERVER') 
 database = os.getenv('AZURE_SQL_DB_NAME')
 username = os.getenv('AZURE_SQL_USER') 
@@ -23,6 +29,8 @@ connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{serve
 params = urllib.parse.quote_plus(connection_string)
 conn_str = 'mssql+pyodbc:///?odbc_connect={}'.format(params)
 engine_azure = create_engine(conn_str,echo=False)
+
+
 
 def list_database_tables() -> str:
     """List tables in the Azure SQL database"""
@@ -160,10 +168,9 @@ def init_system_prompt():
      - IF YOU ARE USING A WHERE CLAUSE, make sure to look up the unique values of the column, don't assume the filter values
      - Only once this is done, create a sql query to retrieve the information based on your understanding of the table
  
+    Think step by step, before doing anything, share the different steps you'll execute to get the answer
 
-    Don't explain your reasoning, just execute the functions if needed and reply with a factual answer
-
-     DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
+    DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
     
     question: "Show me the first 5 rows of the sales_data table"
     query: SELECT TOP(5) * FROM sales_data  
@@ -180,6 +187,7 @@ client = AzureOpenAI(
 )
 
 st.title("Chat with Azure SQL")
+
 st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Azure SQL", icon="📃")
 
 
@@ -194,11 +202,6 @@ if "openai_model" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    if message["role"] in ["user", "assistant"] and 'content' in message:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
 
 system_prompt = init_system_prompt()
 
@@ -279,24 +282,67 @@ def process_stream(stream):
         
         return False
 
+def speech_to_text(audio_file):
+    result = client.audio.transcriptions.create(
+        model=speech_deployment,
+        file=open(audio_file, "rb"),
+    )
+    return result
+    
+    
+
+messages = st.container(height=400, border=False)
+# Display chat messages from history on app rerun
+for message in st.session_state.messages:
+    if message["role"] in ["user", "assistant"] and 'content' in message:
+        with messages.chat_message(message["role"]):
+            st.markdown(message["content"])
+# Display chat input
+prompt=st.chat_input("Ask me anything...")
+
+audio = audiorecorder(start_prompt="", stop_prompt="", pause_prompt="", show_visualizer=False, key=None)
+
+if 'audio' not in st.session_state:
+    st.session_state['audio'] = []
+
+new_audio = False
+if len(audio)>0:
+    audio_buffer = io.BytesIO()
+    audio.export(audio_buffer, format="wav", parameters=["-ar", str(16000)])
+    audio_array = np.frombuffer(audio_buffer.getvalue()[44:], dtype=np.int16).astype(np.float32) / 32768.0
+    
+    if str(st.session_state.audio) != str(audio_array):
+        print('new audio')
+        st.session_state.audio = audio_array
+        new_audio = True
+        if not os.path.exists("./tmp"):
+            os.makedirs("./tmp")
+        audio.export("./tmp/audio.wav", format="wav", parameters=["-ar", str(16000)])
+
+
+with messages:
 # Accept user input
-if prompt := st.chat_input("Ask me anything..."):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    if new_audio:
+        with st.spinner('Transcribing audio...'):
+            transcription = speech_to_text("./tmp/audio.wav")
+            print(transcription)
+            prompt = transcription.text
+    if prompt:
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        # Display user message in chat message container
+        with messages.chat_message("user"):
+            st.markdown(prompt)
 
-
-# Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        has_more = True
-        while has_more:
-            stream = client.chat.completions.create(
-            model=st.session_state["openai_model"],
-            messages=get_message_history(),
-            stream=True,
-            tools = get_tools(),
-            tool_choice="auto"
-        )
-            has_more = process_stream(stream)
+    # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            has_more = True
+            while has_more:
+                stream = client.chat.completions.create(
+                model=st.session_state["openai_model"],
+                messages=get_message_history(),
+                stream=True,
+                tools = get_tools(),
+                tool_choice="auto"
+            )
+                has_more = process_stream(stream)
