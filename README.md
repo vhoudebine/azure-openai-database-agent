@@ -5,6 +5,9 @@ For simplicity purposes, the application implements the agent using the OpenAI P
 
 Read more on [Function Calling](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/function-calling) in Azure OpenAI's documentation
 
+**Architecture diagram**
+![Image](images/arch_diagram.png)
+
 **Streamlit chat frontend**
 
 ![Image](images/screenshot.png)

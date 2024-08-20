@@ -61,7 +61,7 @@ def get_table_rows(table_name: str) -> str:
 
 def get_column_values(table_name: str, column_name: str) -> str:
     """Get the unique values of a column in a table in Azure SQL"""
-    query = f"SELECT DISTINCT {column_name} FROM {table_name}"
+    query = f"SELECT DISTINCT TOP 50 {column_name} FROM {table_name} ORDER BY {column_name}"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
@@ -186,6 +186,7 @@ client = AzureOpenAI(
     api_version='2024-02-01'
 )
 
+st.set_page_config(page_title="Azure SQL Agent")
 st.title("Chat with Azure SQL")
 
 st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Azure SQL", icon="📃")
