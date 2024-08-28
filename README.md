@@ -59,6 +59,8 @@ The [aoai-quickstart.ipynb](./notebooks/aoai-quickstart.ipynb) notebook uses sam
 
 **This notebook is a WIP and is for debugging purposes only**
 
+Install ODBC driver
+
 #### 3. [Streamlit Application](./streamlit-app/)
 
 Run the Streamlit app using the following command:
