@@ -57,7 +57,14 @@ pip install -r requirements.txt
 #### 2. [Interactive Notebook](./notebooks/)
 The [aoai-quickstart.ipynb](./notebooks/aoai-quickstart.ipynb) notebook uses sample data to create a table in Azure SQL and provides an example of using OpenAI tool calling to generate SQL code and execute it in Azure SQL based on a user input.
 
+If running this notebook in Windows, [download and install ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server?view=sql-server-ver16&redirectedfrom=MSDN)
+
+To connect to the database from your local machine, in the Azure Portal, go to the <i>Azure SQl Server -> Networking -> in the Firewall rules section, click "Add your client IPv4 address"</i>.
+
+To work with data other than the sample data provided, it is helpful install [SQL Server Management Studio](https://learn.microsoft.com/en-us/sql/ssms/download-sql-server-management-studio-ssms?view=sql-server-ver16&redirectedfrom=MSDN) to create and query tables
+
 **This notebook is a WIP and is for debugging purposes only**
+
 
 #### 3. [Streamlit Application](./streamlit-app/)
 
