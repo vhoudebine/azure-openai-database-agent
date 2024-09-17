@@ -3,14 +3,17 @@ import os
 from openai import AzureOpenAI
 import pandas as pd
 import streamlit as st
-import pyodbc
+import pyodbc, struct
 from sqlalchemy import create_engine
 from audiorecorder import audiorecorder
 import urllib
 import json
 import io
+import matplotlib.pyplot as plt
 import numpy as np
 import time
+from azure.identity import DefaultAzureCredential
+
 
 
 load_dotenv()
@@ -24,11 +27,47 @@ database = os.getenv('AZURE_SQL_DB_NAME')
 username = os.getenv('AZURE_SQL_USER') 
 password = os.getenv('AZURE_SQL_PASSWORD')
 
-connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};Uid={username};Pwd={password};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+#connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};Uid={username};Pwd={password};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
 
-params = urllib.parse.quote_plus(connection_string)
-conn_str = 'mssql+pyodbc:///?odbc_connect={}'.format(params)
-engine_azure = create_engine(conn_str,echo=False)
+def get_conn():
+    credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+    token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")
+    token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)
+    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by microsoft in msodbcsql.h
+    conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+    return conn
+
+engine_azure = get_conn()
+
+def agent_query_validator(query: str) -> str:
+    """Check that a SQL query is valid"""
+    global client
+    prompt ="""Double check the user's SQL Server query for common mistakes, including:
+- Using LIMIT instead of TOP
+- Using NOT IN with NULL values
+- Using UNION when UNION ALL should have been used
+- Using BETWEEN for exclusive ranges
+- Data type mismatch in predicates
+- Properly quoting identifiers
+- Using the correct number of arguments for functions
+- Casting to the correct data type
+- Using the proper columns for joins
+
+If there are any of the above mistakes, rewrite the query. If there are no mistakes, just reproduce the original query.
+
+Output the final SQL query only."""
+    
+    messages = [{"role":"system", "content":prompt},
+                          {"role":"user", "content":f" here's the query: {query}"}]
+    try:
+        response = client.chat.completions.create(
+                model=st.session_state["openai_model"],
+                messages=messages
+            )
+        return json.dumps(response.choices[0].message.content)
+    except Exception as e:
+        print(e)
 
 
 
@@ -54,7 +93,7 @@ def get_table_schema(table_name: str) -> str:
 
 def get_table_rows(table_name: str) -> str:
     """Get the first 3 rows of a table in Azure SQL"""
-    query = f"SELECT TOP(3) * FROM {table_name}"
+    query = f"SELECT TOP 3 * FROM {table_name}"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return df.to_markdown()
@@ -65,6 +104,30 @@ def get_column_values(table_name: str, column_name: str) -> str:
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
+
+def plot_data(data: str) -> str:
+    # Convert the data string to a dictionary
+    data = json.loads(data)
+    # Convert the dictionary to a pandas DataFrame
+    df = pd.DataFrame(data)
+        
+    # Convert the timestamp column to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+    # Set the timestamp column as the index
+    df.set_index('timestamp', inplace=True)
+        
+    # Plot the data series using a line chart
+    df.plot(kind='line')
+        
+    # Create the tmp folder if it doesn't exist
+    if not os.path.exists('tmp'):
+        os.makedirs('tmp')
+        
+    # Save the plot image in the tmp folder
+    plt.savefig('tmp/plot.png')
+        
+    return "![Image: plot](tmp/plot.png)"
 
 def get_tools():
     return [
@@ -123,7 +186,7 @@ def get_tools():
             "type": "function",
             "function": {
                 "name": "get_column_values",
-                "description": "Get the unique values of a column in a table in Azure SQL",
+                "description": "Get the unique values of a column in a table in Azure SQL, only use this if the main query has a WHERE clause",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -139,6 +202,43 @@ def get_tools():
                     "required": ["table_name", "column_name"],
                 },
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "agent_query_validator",
+                "description": "Validate a SQL query for common mistakes, always call this before calling query_azure_sql",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The SQL query to validate",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            }
+        },
+        {"type": "function",
+            "function":{
+                "name": "plot_data",
+                "description": "plot one or multiple timeseries of data points as a line chart, returns a mardown string",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "data": {
+                            "type": "string",
+                            "description": """A JSON string containing the different data series and timestamp axis with the following format:
+                            {"timestamp": ["2022-01-01", "2022-01-02", "2022-01-03"],
+                            "series1": [10, 20, 30],
+                            "series2": [15, 25, 35]}
+                            """,
+                        },
+                    },
+                    "required": ["data"],
+                },
+            }
         }
 
     ]
@@ -148,7 +248,9 @@ def get_available_functions():
         "query_azure_sql":query_azure_sql, 
         "get_table_schema":get_table_schema,
         "get_table_rows":get_table_rows,
-        "get_column_values":get_column_values
+        "get_column_values":get_column_values,
+        "agent_query_validator":agent_query_validator,
+        "plot_data":plot_data
         }
 
 @st.cache_data
@@ -164,18 +266,28 @@ def init_system_prompt():
 
      When asked a question that could be answered with a SQL query: 
      - ALWAYS look up the schema of the table
-     - ALWAYS preview the first 5 rows
-     - IF YOU ARE USING A WHERE CLAUSE, make sure to look up the unique values of the column, don't assume the filter values
+     - ALWAYS preview the first 3 rows
+     - ONLY IF YOU NEED TO USE WHERE CLAUSE TO FILTER ROWS, make sure to look up the unique values of the column, don't assume the filter values
+     - ALWAYS validate the query for common mistakes before executing it
      - Only once this is done, create a sql query to retrieve the information based on your understanding of the table
+
+    DO NOT RETURN ANY OF THE FUNCTION OUTPUTS IN YOUR RESPONSE
  
     Think step by step, before doing anything, share the different steps you'll execute to get the answer
+    When you get to a final answer use the following structure to provide the answer:
+    <RESPONSE>: Your final answer to the question
 
     DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
     
     question: "Show me the first 5 rows of the sales_data table"
-    query: SELECT TOP(5) * FROM sales_data  
+    query: SELECT TOP 5 * FROM sales_data  
+
+    
      """}
 ]
+
+#    Think step by step, before doing anything, share the different steps you'll execute to get the answer
+
 
 def reset_conversation():
   st.session_state.messages = []
@@ -280,6 +392,12 @@ def process_stream(stream):
             )
         return True
     else:
+        if "![Image: plot](tmp/plot.png)" in assistant_reply:
+            assistant_reply = assistant_reply.replace("![Image: plot](tmp/plot.png)", "")
+            assistant_reply_box.empty()
+            assistant_reply_box.markdown(assistant_reply)
+            st.image("tmp/plot.png")
+            st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
         
         return False
 
