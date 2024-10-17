@@ -69,7 +69,12 @@ Output the final SQL query only."""
     except Exception as e:
         print(e)
 
-
+def convert_datetime_columns_to_string(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert any datetime and timestamp columns in a DataFrame to strings."""
+    for column in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[column]):
+            df[column] = df[column].astype(str)
+    return df
 
 def list_database_tables() -> str:
     """List tables in the Azure SQL database"""
@@ -82,6 +87,7 @@ def query_azure_sql(query: str) -> str:
     """Run a SQL query on Azure SQL and return results as a pandas DataFrame"""
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
+    df = convert_datetime_columns_to_string(df)
     return json.dumps(df.to_dict(orient='records'))
 
 def get_table_schema(table_name: str) -> str:
@@ -96,6 +102,7 @@ def get_table_rows(table_name: str) -> str:
     query = f"SELECT TOP 3 * FROM {table_name}"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
+    df = convert_datetime_columns_to_string(df)
     return df.to_markdown()
 
 def get_column_values(table_name: str, column_name: str) -> str:
@@ -103,6 +110,7 @@ def get_column_values(table_name: str, column_name: str) -> str:
     query = f"SELECT DISTINCT TOP 50 {column_name} FROM {table_name} ORDER BY {column_name}"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
+    df = convert_datetime_columns_to_string(df)
     return json.dumps(df.to_dict(orient='records'))
 
 def plot_data(data: str) -> str:
