@@ -5,3 +5,5 @@ stream_1.py
 deployment.yml
 tmp/audio.wav
 tmp/plot.png
+tmp/plot.png
+notebooks/debug.ipynb

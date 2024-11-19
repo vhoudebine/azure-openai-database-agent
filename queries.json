@@ -1,0 +1,1 @@
+[{"question": "what are the top 3 product categories?", "sql_query": "SELECT TOP 3 pc.Name AS ProductCategory, SUM(sod.LineTotal) AS TotalSales\nFROM SalesLT.Product p\nJOIN SalesLT.ProductCategory pc ON p.ProductCategoryID = pc.ProductCategoryID\nJOIN SalesLT.SalesOrderDetail sod ON p.ProductID = sod.ProductID\nGROUP BY pc.Name\nORDER BY TotalSales DESC"}]

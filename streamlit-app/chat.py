@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 from azure.identity import DefaultAzureCredential
+from streamlit_feedback import streamlit_feedback
+import os
 
 
 
@@ -78,7 +80,7 @@ def convert_datetime_columns_to_string(df: pd.DataFrame) -> pd.DataFrame:
 
 def list_database_tables() -> str:
     """List tables in the Azure SQL database"""
-    query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+    query = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
@@ -261,6 +263,21 @@ def get_available_functions():
         "plot_data":plot_data
         }
 
+def list_example_queries():
+    queries_file = 'queries.json'
+    if os.path.exists(queries_file):
+        with open(queries_file, 'r') as file:
+            queries = json.load(file)
+        df = pd.DataFrame(queries)
+        df_cleaned = df.replace('\n', ' ', regex=True)
+
+        # Convert the cleaned DataFrame to markdown
+        df_cleaned.to_markdown(index=False)
+        return df_cleaned.to_markdown()
+    else:
+        return None
+
+
 @st.cache_data
 def init_system_prompt():
     return [
@@ -290,6 +307,9 @@ def init_system_prompt():
     question: "Show me the first 5 rows of the sales_data table"
     query: SELECT TOP 5 * FROM sales_data  
 
+    ### Important: Here is a list of past question and corresponding queries you can use as a reference:
+    {list_example_queries() if list_example_queries() else ""}
+
     
      """}
 ]
@@ -306,7 +326,6 @@ client = AzureOpenAI(
     api_version='2024-02-01'
 )
 
-st.set_page_config(page_title="Azure SQL Agent")
 st.title("Chat with Azure SQL")
 
 st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Azure SQL", icon="📃")
@@ -473,3 +492,5 @@ with messages:
                 tool_choice="auto"
             )
                 has_more = process_stream(stream)
+            feedback = streamlit_feedback(feedback_type="thumbs")
+        print(feedback)
