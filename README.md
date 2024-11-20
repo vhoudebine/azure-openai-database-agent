@@ -1,4 +1,4 @@
-# Azure OpenAI Database Agent for Azure SQL
+# Azure OpenAI Database Agent for Redshift
 
 This repo shows how to build a Database agent using Azure OpenAI, Redshift and Azure App service
 For simplicity purposes, the application implements the agent using the OpenAI Python SDK's chat completion API and function calling. This provides extended customization possibilities as well as more control over the orchestration, prompts etc.
@@ -15,7 +15,7 @@ Read more on [Function Calling](https://learn.microsoft.com/en-us/azure/ai-servi
 ## Pre-requisites
 This repo assumes you already have the following resources deployed:
 1. Azure OpenAI resource and deployment (ideally GPT-4o)
-2. Azure SQL Server and database with one or multiple tables
+2. Redshift cluster and database with one or multiple tables
 
 ### Populate .env file with your credentials
 
