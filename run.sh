@@ -1,2 +1,2 @@
 #!/bin/bash
-streamlit run ./streamlit-app/app.py --server.port 80
+streamlit run ./streamlit-app/main.py --server.port 80

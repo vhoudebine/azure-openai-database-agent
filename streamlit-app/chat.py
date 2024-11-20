@@ -16,28 +16,27 @@ from azure.identity import DefaultAzureCredential
 from streamlit_feedback import streamlit_feedback
 import os
 
-
-
 load_dotenv()
 
 endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
 api_key = os.getenv('AZURE_OPENAI_API_KEY')
 deployment = os.getenv('AZURE_OPENAI_GPT_MODEL_DEPLOYMENT')
 speech_deployment = os.getenv('AZURE_OPENAI_WHISPER_MODEL')
-server = os.getenv('AZURE_SQL_SERVER') 
-database = os.getenv('AZURE_SQL_DB_NAME')
-username = os.getenv('AZURE_SQL_USER') 
-password = os.getenv('AZURE_SQL_PASSWORD')
+server = os.getenv('REDSHIFT_SERVER') 
+database = os.getenv('REDSHIFT_DB_NAME')
+username = os.getenv('REDSHIFT_USER') 
+password = os.getenv('REDSHIFT_PASSWORD')
 
-#connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};Uid={username};Pwd={password};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
-connection_string = f'Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+odbc_url = f"""
+    Driver={{Amazon Redshift (x64)}}; 
+    Server={server}; 
+    Database={database};
+    UID={username};
+    PWD={password};
+"""
 
 def get_conn():
-    credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
-    token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")
-    token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)
-    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by microsoft in msodbcsql.h
-    conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+    conn = pyodbc.connect(odbc_url)
     return conn
 
 engine_azure = get_conn()
@@ -79,38 +78,38 @@ def convert_datetime_columns_to_string(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def list_database_tables() -> str:
-    """List tables in the Azure SQL database"""
+    """List tables in Database"""
     query = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
 
-def query_azure_sql(query: str) -> str:
-    """Run a SQL query on Azure SQL and return results as a pandas DataFrame"""
-    print(f"Executing query on Azure SQL: {query}")
+def query_sql(query: str) -> str:
+    """Run a SQL query on Database and return results as a pandas DataFrame"""
+    print(f"Executing query on Database: {query}")
     df = pd.read_sql(query, engine_azure)
     df = convert_datetime_columns_to_string(df)
     return json.dumps(df.to_dict(orient='records'))
 
 def get_table_schema(table_name: str) -> str:
-    """Get the schema of a table in Azure SQL"""
+    """Get the schema of a table in Database"""
     query = f"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'"
     print(f"Executing query on Azure SQL: {query}")
     df = pd.read_sql(query, engine_azure)
     return json.dumps(df.to_dict(orient='records'))
 
 def get_table_rows(table_name: str) -> str:
-    """Get the first 3 rows of a table in Azure SQL"""
+    """Get the first 3 rows of a table in Database"""
     query = f"SELECT TOP 3 * FROM {table_name}"
-    print(f"Executing query on Azure SQL: {query}")
+    print(f"Executing query on Database: {query}")
     df = pd.read_sql(query, engine_azure)
     df = convert_datetime_columns_to_string(df)
     return df.to_markdown()
 
 def get_column_values(table_name: str, column_name: str) -> str:
-    """Get the unique values of a column in a table in Azure SQL"""
-    query = f"SELECT DISTINCT TOP 50 {column_name} FROM {table_name} ORDER BY {column_name}"
-    print(f"Executing query on Azure SQL: {query}")
+    """Get the unique values of a column in a table in Database"""
+    query = f"SELECT DISTINCT {column_name} FROM {table_name} ORDER BY {column_name} LIMIT 50"
+    print(f"Executing query on Database: {query}")
     df = pd.read_sql(query, engine_azure)
     df = convert_datetime_columns_to_string(df)
     return json.dumps(df.to_dict(orient='records'))
@@ -144,7 +143,7 @@ def get_tools():
         {
             "type": "function",
             "function": {
-                "name": "query_azure_sql",
+                "name": "query_sql",
                 "description": "Execute a SQL query to retrieve information from a database",
                 "parameters": {
                     "type": "object",
@@ -255,7 +254,7 @@ def get_tools():
 
 def get_available_functions():
     return {
-        "query_azure_sql":query_azure_sql, 
+        "query_azure_sql":query_sql, 
         "get_table_schema":get_table_schema,
         "get_table_rows":get_table_rows,
         "get_column_values":get_column_values,
@@ -283,7 +282,7 @@ def init_system_prompt():
     return [
     {"role":"system", "content":f"""You are a helpful AI data analyst assistant, 
      You can execute SQL queries to retrieve information from a sql database,
-     The database is SQL server, use the right syntax to generate queries
+     The database is AWS REDSHIFT, use the right syntax to generate queries
 
 
      ### These are the available tables in the database:
@@ -300,12 +299,7 @@ def init_system_prompt():
  
     Think step by step, before doing anything, share the different steps you'll execute to get the answer
     When you get to a final answer use the following structure to provide the answer:
-    <RESPONSE>: Your final answer to the question
-
-    DO not use LIMIT in your generated SQL, instead use the TOP() function as follows:
-    
-    question: "Show me the first 5 rows of the sales_data table"
-    query: SELECT TOP 5 * FROM sales_data  
+    <RESPONSE>: Your final answer to the question 
 
     ### Important: Here is a list of past question and corresponding queries you can use as a reference:
     {list_example_queries() if list_example_queries() else ""}
@@ -326,9 +320,9 @@ client = AzureOpenAI(
     api_version='2024-02-01'
 )
 
-st.title("Chat with Azure SQL")
+st.title("Chat with Redshift SQL")
 
-st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Azure SQL", icon="📃")
+st.info("This is a simple chat app to demo how to create a database agent powered by Azure OpenAI and capable of interacting with Redshift", icon="📃")
 
 
 st.button('Clear Chat History 🔄', on_click=reset_conversation)
